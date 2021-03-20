@@ -1,0 +1,239 @@
+------------------------------------------------------------------------------------------------------------
+CREATE PACKAGE GAZEBO_RRR AS A COPY OF GAZEBO_ROS_DEMO IN CATKIN_WS/SRC
+=============================================================================================================
+MANUALLY EDIT THE DESCRIPTION FILES TO CREATE CUSTOM ROBOT/JOINTS/ACTUATORS 
+EDIT XACRO IN RRRDESCRIPTION TO INCORPORATE CONTINUOUS JOINT BETWEEN WORLD AND LINK1 AT WITH ORIGIN @ 0,0,0 AND AXES AS 0 0 1
+ADD TRANSMISSION OF MOTOR ACTUATOR FOR THE ADDITIONAL JOINT FOR EFFORT_CONTROLLER HARDWARE INTERFACING.
+MODIFY THE SAME IN RVIZ AND RQT AS WELL.
+
+or GIT CLONE from https://github.com/AkashAVI/gazebo_rrr.git
+
+=============================================================================================================
+IMAGE_PROCESSING
+=============================================================================================================
+
+MANUALLY EDIT THE IMAGE_CONVERTER SOURCE CODE TO PERFORM IMAGE PROCESSING
+-------------------------------------------------------------------------------------------------------------
+//////////////////////////////////////////////////////////////////////
+#include <ros/ros.h>
+#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/image_encodings.h>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
+static const std::string OPENCV_WINDOW = "Image window";
+
+class ImageConvertor
+{
+  ros::NodeHandle nh_;
+  image_transport::ImageTransport it_;
+  image_transport::Subscriber image_sub_;
+  image_transport::Publisher image_pub_;
+
+public:
+  ImageConvertor()
+    : it_(nh_)
+  {
+    // Subscrive to input video feed and publish output video feed
+    image_sub_ = it_.subscribe("/rrrbot/camera1/image_raw", 1,
+      &ImageConvertor::imageCb, this);
+    image_pub_ = it_.advertise("/image_convertor/output_video", 1);
+
+    cv::namedWindow(OPENCV_WINDOW);
+  }
+
+  ~ImageConvertor()
+  {
+    cv::destroyWindow(OPENCV_WINDOW);
+  }
+
+  void imageCb(const sensor_msgs::ImageConstPtr& msg)
+  {
+    cv_bridge::CvImagePtr cv_ptr;
+    cv::Mat gray_out;
+    cv::Mat canny_out;
+    try
+    {
+      cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+    }
+    catch (cv_bridge::Exception& e)
+    {
+      ROS_ERROR("cv_bridge exception: %s", e.what());
+      return;
+    }
+
+    // ************** CODE HERE FOR THE IMAGE PROCESSING YOU WANNA PERFORM ***************
+      cv::cvtColor(cv_ptr->image, gray_out, CV_BGR2GRAY);
+      cv::GaussianBlur(gray_out, gray_out, cv::Size(3,3),0,0);
+      cv::Canny(gray_out, canny_out, 50,125,3);
+      cv_ptr->image=canny_out;
+      
+    // Draw an example circle on the video stream
+    if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
+      cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
+
+    // Update GUI Window
+    cv::imshow(OPENCV_WINDOW, cv_ptr->image);
+    cv::waitKey(3);
+
+    // Output modified video stream
+    image_pub_.publish(cv_ptr->toImageMsg());
+  }
+};
+
+int main(int argc, char** argv)
+{
+  ros::init(argc, argv, "image_convertor");
+  ImageConvertor ic;
+  ros::spin();
+  return 0;
+}
+///////////////////////////////////////////////////////////
+
+MANUALLY EDIT THE CMAKE TO INCORPORATE CHANGES FOR THE NEW EXECUTABLE (NODE) TO BE GENERATED FROM THE SOURCE CODE
+-------------------------------------------------------------------------------------------------------------
+cmake_minimum_required(VERSION 3.0.2)
+project(opencv_demo)
+
+find_package(catkin REQUIRED COMPONENTS
+  cv_bridge
+  image_transport
+  roscpp
+  sensor_msgs
+  std_msgs
+)
+
+
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES opencv_demo
+#  CATKIN_DEPENDS cv_bridge image_transport roscpp sensor_msgs std_msgs
+#  DEPENDS system_lib
+)
+
+
+include_directories(
+# include
+  ${catkin_INCLUDE_DIRS}
+)
+
+add_executable(image_converter src/image_converter.cpp)
+target_link_libraries(image_converter ${catkin_LIBRARIES})
+
+********************************
+add_executable(image_convertor src/image_convertor.cpp)
+target_link_libraries(image_convertor ${catkin_LIBRARIES})
+*********************************
+---------------------------------------------------------------------------------------------------------------
+
+BUILD THE OPENCV_DEMO PKG TO GENERATE EXECUTABLE(NODE) FROM THE SOURCE CODE
+===============================================================================================================
+akash@akash-VirtualBox:~/catkin_ws$ catkin_make
+Base path: /home/akash/catkin_ws
+Source space: /home/akash/catkin_ws/src
+Build space: /home/akash/catkin_ws/build
+Devel space: /home/akash/catkin_ws/devel
+Install space: /home/akash/catkin_ws/install
+####
+#### Running command: "make cmake_check_build_system" in "/home/akash/catkin_ws/build"
+####
+####
+#### Running command: "make -j1 -l1" in "/home/akash/catkin_ws/build"
+####
+[ 25%] Built target image_converter
+Scanning dependencies of target image_convertor
+[ 37%] Building CXX object opencv_demo/CMakeFiles/image_convertor.dir/src/image_convertor.cpp.o
+[ 50%] Linking CXX executable /home/akash/catkin_ws/devel/lib/opencv_demo/image_convertor
+[ 50%] Built target image_convertor
+[ 75%] Built target gazebo_tutorial
+[100%] Built target gazebo_tutorials
+
+
+------------------------------------------------------------------------------------------------------------
+LAUNCH GAZEBO
+------------------------------------------------------------------------------------------------------------
+akash@akash-VirtualBox:~/catkin_ws$ source devel/setup.bash
+akash@akash-VirtualBox:~/catkin_ws$ roslaunch rrrbot_gazebo rrrbot_world.launch
+
+
+/// INSERT --> DESIRED OBJECT AT DESIRED LOCATION
+============================================================================================================
+LAUNCH RRRBOT_CONTROLLER
+------------------------------------------------------------------------------------------------------------
+akash@akash-VirtualBox:~$ cd catkin_ws
+akash@akash-VirtualBox:~/catkin_ws$ source devel/setup.bash
+akash@akash-VirtualBox:~/catkin_ws$ roslaunch rrrbot_control rrrbot_control.launch
+
+... logging to /home/akash/.ros/log/4dd93c60-8975-11eb-93e1-6908f65f6246/roslaunch-akash-VirtualBox-2186.log
+Checking log directory for disk usage. This may take a while.
+Press Ctrl-C to interrupt
+Done checking log file disk usage. Usage is <1GB.
+
+started roslaunch server http://akash-VirtualBox:42369/
+
+SUMMARY
+========
+
+PARAMETERS
+ * /rosdistro: noetic
+ * /rosversion: 1.15.9
+ * /rrrbot/joint1_position_controller/joint: joint1
+ * /rrrbot/joint1_position_controller/pid/d: 10.0
+ * /rrrbot/joint1_position_controller/pid/i: 0.01
+ * /rrrbot/joint1_position_controller/pid/p: 100.0
+ * /rrrbot/joint1_position_controller/type: effort_controller...
+ * /rrrbot/joint2_position_controller/joint: joint2
+ * /rrrbot/joint2_position_controller/pid/d: 10.0
+ * /rrrbot/joint2_position_controller/pid/i: 0.01
+ * /rrrbot/joint2_position_controller/pid/p: 100.0
+ * /rrrbot/joint2_position_controller/type: effort_controller...
+ * /rrrbot/joint3_position_controller/joint: joint3
+ * /rrrbot/joint3_position_controller/pid/d: 10.0
+ * /rrrbot/joint3_position_controller/pid/i: 0.01
+ * /rrrbot/joint3_position_controller/pid/p: 100.0
+ * /rrrbot/joint3_position_controller/type: effort_controller...
+ * /rrrbot/joint_state_controller/publish_rate: 50
+ * /rrrbot/joint_state_controller/type: joint_state_contr...
+
+NODES
+  /
+    robot_state_publisher (robot_state_publisher/robot_state_publisher)
+  /rrrbot/
+    controller_spawner (controller_manager/spawner)
+
+ROS_MASTER_URI=http://localhost:11311
+
+process[rrrbot/controller_spawner-1]: started with pid [2200]
+process[robot_state_publisher-2]: started with pid [2201]
+[INFO] [1616257325.840405, 0.000000]: Controller Spawner: Waiting for service controller_manager/load_controller
+[INFO] [1616257325.862286, 214.132000]: Controller Spawner: Waiting for service controller_manager/switch_controller
+[INFO] [1616257325.882976, 214.135000]: Controller Spawner: Waiting for service controller_manager/unload_controller
+[INFO] [1616257325.898702, 214.137000]: Loading controller: joint_state_controller
+[INFO] [1616257328.056464, 215.535000]: Loading controller: joint1_position_controller
+[INFO] [1616257328.406003, 215.670000]: Loading controller: joint2_position_controller
+[INFO] [1616257328.549355, 215.701000]: Loading controller: joint3_position_controller
+[INFO] [1616257328.666071, 215.734000]: Controller Spawner: Loaded controllers: joint_state_controller, joint1_position_controller, joint2_position_controller, joint3_position_controller
+[INFO] [1616257328.676089, 215.736000]: Started controllers: joint_state_controller, joint1_position_controller, joint2_position_controller, joint3_position_controller
+
+
+=============================================================================================================
+
+PUBLISH TO ACTIVE TOPICS VIA PYTHON GUI
+=============================================================================================================
+akash@akash-VirtualBox:~$ cd catkin_ws
+akash@akash-VirtualBox:~/catkin_ws$ source devel/setup.bash
+akash@akash-VirtualBox:~/catkin_ws$ rosrun rqt_gui rqt_gui
+=============================================================================================================
+
+RUN EXECUTABLE (NODE) TO VIEW OUTPUT OF PROCESSED IMAGE CAPTURED BY THE CAMERA IN RRBOT IN REAL TIME
+----------------------------------------------------------------------------------------------------------------
+akash@akash-VirtualBox:~/catkin_ws$ source devel/setup.bash
+akash@akash-VirtualBox:~/catkin_ws$ rosrun opencv_demo image_convertor
+
+
+
+
+
+
+
